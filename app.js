@@ -1,23 +1,9 @@
-const STORAGE_KEY = "habitTracker";
-
 let habits = [];
+let currentToken = null;
 
 function getTodayISO() {
   const d = new Date();
   return d.toISOString().slice(0, 10);
-}
-
-function load() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    habits = raw ? JSON.parse(raw) : [];
-  } catch {
-    habits = [];
-  }
-}
-
-function save() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(habits));
 }
 
 function getStreak(checkDates, today) {
@@ -63,8 +49,9 @@ function render() {
     card.className = "habit-card";
     card.dataset.id = habit.id;
 
-    const checked = habit.checkDates && habit.checkDates.includes(today);
-    const streak = getStreak(habit.checkDates || [], today);
+    const dates = habit.check_dates || [];
+    const checked = dates.includes(today);
+    const streak = getStreak(dates, today);
     const streakEmoji = streak === 0 ? "💨" : "🔥";
     const streakHtml = `<span class="streak">Streak: ${streak}<span class="streak-icon" aria-label="streak">${streakEmoji}</span></span>`;
 
@@ -87,48 +74,64 @@ function render() {
     const editBtn = card.querySelector('[data-action="edit"]');
     const removeBtn = card.querySelector('[data-action="remove"]');
 
-    checkbox.addEventListener("change", function () {
-      const h = habits.find((x) => x.id === habit.id);
-      if (!h) return;
-      if (!h.checkDates) h.checkDates = [];
-      if (h.checkDates.includes(today)) {
-        h.checkDates = h.checkDates.filter((d) => d !== today);
-      } else {
-        h.checkDates.push(today);
-        h.checkDates.sort();
-      }
-      save();
-      render();
-    });
+    if (checkbox) {
+      checkbox.addEventListener("change", async function () {
+        if (!currentToken || !window.api) return;
+        try {
+          const updated = await window.api.toggleHabit(currentToken, habit.id);
+          habits = habits.map((h) => (h.id === updated.id ? updated : h));
+          render();
+        } catch (err) {
+          console.error(err);
+          // Re-render to reset checkbox state
+          render();
+        }
+      });
+    }
 
     if (editBtn) {
-      editBtn.addEventListener("click", function () {
-        const h = habits.find((x) => x.id === habit.id);
-        if (!h) return;
+      editBtn.addEventListener("click", async function () {
+        if (!currentToken || !window.api) return;
 
-        const newName = window.prompt("Edit habit name:", h.name || "");
+        const current = habits.find((x) => x.id === habit.id);
+        if (!current) return;
+
+        const newName = window.prompt("Edit habit name:", current.name || "");
         if (newName === null) return; // cancelled
         const trimmedName = newName.trim();
         if (!trimmedName) return;
 
         const newDesc = window.prompt(
           "Edit description (optional):",
-          h.description || ""
+          current.description || ""
         );
         if (newDesc === null) return; // cancelled
 
-        h.name = trimmedName;
-        h.description = (newDesc || "").trim();
-        save();
-        render();
+        try {
+          const updated = await window.api.updateHabit(currentToken, habit.id, {
+            name: trimmedName,
+            description: (newDesc || "").trim(),
+          });
+          habits = habits.map((h) => (h.id === updated.id ? updated : h));
+          render();
+        } catch (err) {
+          console.error(err);
+        }
       });
     }
 
-    removeBtn.addEventListener("click", function () {
-      habits = habits.filter((x) => x.id !== habit.id);
-      save();
-      render();
-    });
+    if (removeBtn) {
+      removeBtn.addEventListener("click", async function () {
+        if (!currentToken || !window.api) return;
+        try {
+          await window.api.deleteHabit(currentToken, habit.id);
+          habits = habits.filter((x) => x.id !== habit.id);
+          render();
+        } catch (err) {
+          console.error(err);
+        }
+      });
+    }
 
     listEl.appendChild(card);
   }
@@ -140,39 +143,67 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function addHabit(name, description) {
-  const id = typeof crypto !== "undefined" && crypto.randomUUID
-    ? crypto.randomUUID()
-    : "id-" + Date.now() + "-" + Math.random().toString(36).slice(2);
-  habits.push({
-    id,
-    name: (name || "").trim(),
-    description: (description || "").trim(),
-    checkDates: [],
-  });
-  save();
+async function loadHabits() {
+  if (!currentToken || !window.api) {
+    habits = [];
+    render();
+    return;
+  }
+  try {
+    habits = await window.api.getHabits(currentToken);
+  } catch (err) {
+    console.error(err);
+    habits = [];
+  }
   render();
 }
 
 function init() {
-  load();
   render();
 
   const form = document.getElementById("addForm");
   if (form) {
-    form.addEventListener("submit", function (e) {
+    form.addEventListener("submit", async function (e) {
       e.preventDefault();
       const nameInput = document.getElementById("habitName");
       const descInput = document.getElementById("habitDescription");
       const name = nameInput && nameInput.value;
       const desc = descInput && descInput.value;
-      if (name) {
-        addHabit(name, desc);
+      if (!name || !currentToken || !window.api) return;
+      try {
+        const created = await window.api.createHabit(currentToken, {
+          name,
+          description: desc || "",
+        });
+        habits.push(created);
+        render();
         if (nameInput) nameInput.value = "";
         if (descInput) descInput.value = "";
+      } catch (err) {
+        console.error(err);
       }
     });
   }
+
+  if (window.auth && typeof window.auth.onAuthChange === "function") {
+    window.auth.onAuthChange(function (isAuthed, info) {
+      currentToken = isAuthed && info && info.accessToken ? info.accessToken : null;
+      if (currentToken) {
+        loadHabits();
+      } else {
+        habits = [];
+        render();
+      }
+    });
+  } else {
+    // Fallback: no auth layer; keep empty
+    habits = [];
+    render();
+  }
 }
 
-init();
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", init);
+} else {
+  init();
+}

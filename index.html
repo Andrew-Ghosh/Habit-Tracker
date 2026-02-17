@@ -12,16 +12,42 @@
     <p class="current-date" id="currentDate"></p>
   </header>
 
-  <main class="main">
-    <form class="add-form" id="addForm">
-      <input type="text" id="habitName" placeholder="Habit name" required>
-      <input type="text" id="habitDescription" placeholder="Description (optional)">
-      <button type="submit">Add</button>
-    </form>
+  <main>
+    <section class="auth-section" id="authSection">
+      <div class="auth-card">
+        <h2>Sign in</h2>
+        <form id="loginForm" class="auth-form">
+          <input type="email" placeholder="Email" required>
+          <input type="password" placeholder="Password" required>
+          <button type="submit">Log in</button>
+        </form>
+        <p class="auth-divider">or create an account</p>
+        <form id="signupForm" class="auth-form">
+          <input type="email" placeholder="Email" required>
+          <input type="password" placeholder="Password" required>
+          <button type="submit">Sign up</button>
+        </form>
+        <p id="authError" class="auth-error"></p>
+      </div>
+    </section>
 
-    <div class="habit-list" id="habitList"></div>
+    <section class="main" id="appSection" hidden>
+      <div class="user-bar">
+        <span class="user-email" id="userEmail"></span>
+        <button type="button" id="logoutButton" class="logout-btn">Log out</button>
+      </div>
+      <form class="add-form" id="addForm">
+        <input type="text" id="habitName" placeholder="Habit name" required>
+        <input type="text" id="habitDescription" placeholder="Description (optional)">
+        <button type="submit">Add</button>
+      </form>
+
+      <div class="habit-list" id="habitList"></div>
+    </section>
   </main>
 
+  <script src="auth.js"></script>
+  <script src="api.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
